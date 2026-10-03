@@ -1,1 +1,110 @@
+# Architecture
 
+## Purpose
+
+TokenVault AI is a gateway between AI applications and model providers. Applications call TokenVault with an OpenAI-compatible request; TokenVault applies enabled, safe optimizations, forwards to an allowed provider, records usage, and returns the response.
+
+## Components
+
+- **Backend** (Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2, Alembic): gateway, admin API, accounting, optimization engine.
+- **Database**: PostgreSQL in production; SQLite for local tests and simplest local run.
+- **Cache**: built-in in-memory cache by default; Redis-compatible store optional.
+- **Provider adapters** (httpx, async): a deterministic **mock provider** (default) and an OpenAI-compatible adapter. Only hosts on a server-side allowlist can be contacted.
+- **Frontend** (Next.js, TypeScript, Tailwind): dark-mode-first dashboard that reads real backend data only. Synthetic demo data, if shown, is clearly labeled and separated.
+
+## Request flow (target design)
+
+1. Authenticate API key (hashed lookup). Tenant and workspace come from the key, never from a request header.
+2. Validate body, enforce size limit, rate limit, and concurrency limit.
+3. Check provider capabilities for requested features; return a clear error if unsupported.
+4. Run enabled optimizations in order: exact cache, tool dedup, context shadow analysis, routing dry-run.
+5. Call the upstream provider with timeout and bounded retries.
+6. Extract provider-reported usage; compute cost from a versioned price table.
+7. Write a durable usage event (timestamp, tenant, request ID). Prompt and completion content is not stored by default.
+8. Return the response, preserving tool calls and structured outputs.
+
+## Optimization features (each behind a flag, all off by default)
+
+| Feature | First version scope |
+|---|---|
+| Exact response cache | Non-streaming, no tools, deterministic settings only; tenant-scoped keys |
+| Token accountant | Reported counts only; versioned prices; estimates labeled |
+| Work deduplication | Explicitly identified deterministic tool calls only |
+| Context optimization | Shadow mode only (suggestions logged, prompts unchanged) |
+| Cost-aware routing | Dry-run first; authorized models and providers only |
+| Task planner | Dependency graph with conservative baseline fallback |
+
+TokenVault never changes model behavior silently to save money.
+
+## Data labels (used everywhere)
+
+- **Provider-reported**: counts returned by the provider.
+- **Provider-reported cached**: cached-input counts returned by the provider.
+- **Estimated**: calculated from configured prices or token estimates.
+- **Measured billing**: imported invoice data, if available.
+- **Simulated**: synthetic or benchmark data, never mixed with real usage.
+- **Counterfactual**: what might have been spent; always an estimate.
+
+## Savings definitions
+
+- **Gross avoided upstream cost**: estimated cost of upstream operations avoided, using a documented baseline and the correct price schedule.
+- **Net savings**: matched baseline cost minus actual optimized total cost, including optimizer overhead, auxiliary models, tools, validation, and retries.
+- A cache hit is not called a verified saving unless baseline cost, applicable prices, and the avoided operation are established.
+
+## Planned data model (Batch 2)
+
+`tenants`, `workspaces`, `api_keys` (hash only), `admin_users`, `usage_events`, `price_tables` and `price_entries` (versioned), `provider_configs`, `cache_entries` metadata, `optimization_decisions`, `experiments`, `audit_events`.
+
+All tenant-owned tables carry a tenant identifier and every query filters by it.
+
+## Planned repository tree
+
+```
+tokenvault-ai/
+├── README.md                      (Batch 1)
+├── LICENSE                        (Batch 1, owner decision)
+├── .gitignore                     (Batch 1)
+├── .env.example                   (Batch 1)
+├── docker-compose.yml             (Batch 6)
+├── .github/workflows/ci.yml       (Batch 6)
+├── docs/
+│   ├── SETUP_GUIDE.md             (Batch 1)
+│   ├── ARCHITECTURE.md            (Batch 1)
+│   ├── SECURITY.md                (Batch 1)
+│   ├── API.md                     (Batch 3)
+│   ├── OPTIMIZATION_POLICY.md     (Batch 4)
+│   ├── TESTING.md                 (Batch 6)
+│   └── DEPLOYMENT.md              (Batch 7)
+├── backend/
+│   ├── Dockerfile                 (Batch 6)
+│   ├── pyproject.toml             (Batch 2)
+│   ├── alembic.ini                (Batch 2)
+│   ├── migrations/                (Batch 2: env.py, script.py.mako, versions/)
+│   ├── app/
+│   │   ├── main.py                (Batch 2)
+│   │   ├── core/                  (Batch 2: config, logging, security, errors)
+│   │   ├── db/                    (Batch 2: base, session)
+│   │   ├── models/                (Batch 2)
+│   │   ├── schemas/               (Batches 2-3)
+│   │   ├── middleware/            (Batch 2: request ID, body limit, rate limit)
+│   │   ├── api/                   (Batches 2-5: health, admin, chat, usage)
+│   │   ├── providers/             (Batch 3: base, mock, openai_compatible, registry)
+│   │   └── services/              (Batches 3-4: cache, pricing, accounting, optimization)
+│   └── tests/                     (Batches 2-6)
+└── frontend/
+    ├── Dockerfile                 (Batch 6)
+    ├── package.json               (Batch 5)
+    ├── tsconfig.json              (Batch 5)
+    ├── next.config.ts             (Batch 5)
+    ├── app/                       (Batch 5: the 10 dashboard pages)
+    ├── components/                (Batch 5)
+    ├── lib/                       (Batch 5: API client)
+    └── public/                    (Batch 5)
+```
+
+The file-level list inside each folder is finalized at the start of its batch, and every referenced file will be provided.
+
+## Open decisions
+
+- License choice (owner).
+- Whether the first release supports streaming. Proposal: non-streaming first (Batch 3), streaming pass-through without caching right after, both documented in `docs/API.md`.
