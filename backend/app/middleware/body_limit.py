@@ -102,9 +102,17 @@ class BodyLimitMiddleware:
                 response_started = True
             await send(message)
 
-        await self.app(scope, limited_receive, guarded_send)
+        try:
+            await self.app(scope, limited_receive, guarded_send)
+        except Exception:
+            # When we cut an upload short, the app may fail with a "client disconnected"
+            # error. That is our 413 situation, not a server error. Any other failure
+            # is re-raised untouched.
+            if not exceeded:
+                raise
 
         if exceeded and not response_started and not rejected:
+            rejected = True
             await self._reject(
                 scope,
                 receive,
@@ -113,4 +121,4 @@ class BodyLimitMiddleware:
                 "request_too_large",
                 "Request body exceeds the maximum allowed size.",
             )
-          
+            
