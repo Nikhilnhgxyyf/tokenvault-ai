@@ -15,6 +15,9 @@ from app.services.pricing import (
     nano_usd_to_usd,
 )
 
+# Deliberately WITHOUT a timezone, to prove such values are rejected.
+NAIVE_TIME = datetime.fromisoformat("2026-01-01T00:00:00")
+
 # These prices are FAKE test data. They are not any provider's real prices.
 INPUT_PRICE = 150_000  # 0.15 USD per million tokens
 OUTPUT_PRICE = 600_000  # 0.60 USD per million tokens
@@ -107,7 +110,7 @@ def test_invalid_token_counts_are_rejected() -> None:
 
 def test_price_input_requires_a_timezone() -> None:
     with pytest.raises(ValidationError):
-        make_price("v1", datetime(2026, 1, 1))
+        make_price("v1", NAIVE_TIME)
 
 
 def test_price_input_rejects_negative_prices() -> None:
@@ -181,6 +184,6 @@ async def test_find_price_requires_a_timezone(
     async with session_factory() as session:
         with pytest.raises(ValueError):
             await find_price(
-                session, provider="p", model="m", at=datetime(2026, 1, 1)
-  )
-          
+                session, provider="p", model="m", at=NAIVE_TIME
+            )
+            
