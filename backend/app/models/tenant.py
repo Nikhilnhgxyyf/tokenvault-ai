@@ -1,27 +1,22 @@
-"""Tenant creation. (API-key authentication and admin routes come in a later batch.)"""
+"""Tenants: the isolation boundary. Every tenant-owned table carries a tenant_id."""
 
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+import uuid
+from datetime import datetime
 
-from app.models.tenant import Tenant
-from app.services.errors import DuplicateTenantError
+from sqlalchemy import Boolean, String, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
-
-class TenantInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
-
-    name: str = Field(min_length=1, max_length=200)
-    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,62}$")
+from app.db.base import Base
+from app.db.types import UTCDateTime, utc_now
 
 
-async def create_tenant(session: AsyncSession, data: TenantInput) -> Tenant:
-    tenant = Tenant(name=data.name, slug=data.slug)
-    session.add(tenant)
-    try:
-        await session.flush()
-    except IntegrityError as exc:
-        await session.rollback()
-        raise DuplicateTenantError("A tenant with this slug already exists.") from exc
-    return tenant
-  
+class Tenant(Base):
+    __tablename__ = "tenants"
+    __table_args__ = (UniqueConstraint("slug", name="uq_tenants_slug"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utc_now)
+    
