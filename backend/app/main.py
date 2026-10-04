@@ -15,6 +15,7 @@ from app.api.health import router as health_router
 from app.core.config import Settings, get_settings
 from app.core.errors import install_exception_handlers
 from app.core.logging import configure_logging
+from app.db.session import create_engine_from_settings, create_session_factory, create_tables
 from app.middleware.body_limit import BodyLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware
 from app.providers.base import ProviderNotConfiguredError
@@ -26,6 +27,8 @@ logger = logging.getLogger("tokenvault.app")
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     settings: Settings = application.state.settings
+    if settings.should_auto_create_tables:
+        await create_tables(application.state.engine)
     logger.info(
         "startup",
         extra={
@@ -36,6 +39,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         },
     )
     yield
+    await application.state.engine.dispose()
     logger.info("shutdown")
 
 
@@ -53,6 +57,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     application.state.settings = settings
+    application.state.engine = create_engine_from_settings(settings)
+    application.state.session_factory = create_session_factory(application.state.engine)
     try:
         application.state.provider = get_provider(settings)
         application.state.provider_error = None
