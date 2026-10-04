@@ -26,6 +26,9 @@ WINDOW_START = datetime(2026, 5, 1, tzinfo=UTC)
 WINDOW_END = datetime(2026, 7, 1, tzinfo=UTC)
 EVENT_TIME = datetime(2026, 6, 1, tzinfo=UTC)
 
+# Deliberately WITHOUT a timezone, to prove such values are rejected.
+NAIVE_TIME = datetime.fromisoformat("2026-01-01T00:00:00")
+
 # FAKE test price. Not any provider's real price list.
 TEST_PRICE = PriceInput(
     provider="test-provider",
@@ -138,7 +141,7 @@ def test_invalid_usage_input_is_rejected() -> None:
     with pytest.raises(ValidationError):
         usage_input("t1", usage_origin="guess")
     with pytest.raises(ValidationError):
-        usage_input("t1", occurred_at=datetime(2026, 6, 1))  # no timezone
+        usage_input("t1", occurred_at=NAIVE_TIME)  # no timezone
 
 
 async def test_duplicate_tenant_slug_is_rejected(
@@ -248,7 +251,7 @@ async def test_summary_and_list_validate_their_arguments(
     async with session_factory() as session:
         with pytest.raises(ValueError):
             await summarize_usage(
-                session, tenant_id=tenant_a, start=datetime(2026, 1, 1), end=WINDOW_END
+                session, tenant_id=tenant_a, start=NAIVE_TIME, end=WINDOW_END
             )
         with pytest.raises(ValueError):
             await summarize_usage(
@@ -310,4 +313,4 @@ async def test_database_itself_enforces_the_rules(
         with pytest.raises(IntegrityError):
             await session.flush()
         await session.rollback()
-  
+        
