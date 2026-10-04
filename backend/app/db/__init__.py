@@ -1,1 +1,1 @@
-"""Business logic: tenants, pricing, and usage accounting."""
+"""Database foundation: base class, types, engine, and sessions."""
