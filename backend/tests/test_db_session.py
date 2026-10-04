@@ -14,6 +14,10 @@ from app.db.session import check_database, create_engine_from_settings, session_
 from app.db.types import UTCDateTime
 from app.models.tenant import Tenant
 
+# Deliberately WITHOUT a timezone, to prove such values are rejected or repaired.
+NAIVE_NEW_YEAR = datetime.fromisoformat("2026-01-01T00:00:00")
+NAIVE_NOON = datetime.fromisoformat("2026-01-01T12:00:00")
+
 
 def make_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
@@ -107,12 +111,12 @@ async def test_timestamps_come_back_timezone_aware(
 def test_naive_datetimes_are_rejected() -> None:
     column_type = UTCDateTime()
     with pytest.raises(ValueError):
-        column_type.process_bind_param(datetime(2026, 1, 1), None)
+        column_type.process_bind_param(NAIVE_NEW_YEAR, None)
 
 
 def test_naive_datetimes_from_the_database_are_treated_as_utc() -> None:
     column_type = UTCDateTime()
-    result = column_type.process_result_value(datetime(2026, 1, 1, 12, 0), None)
+    result = column_type.process_result_value(NAIVE_NOON, None)
     assert result == datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
@@ -145,4 +149,4 @@ def test_ready_is_503_when_the_database_is_unreachable(
     assert body["database"] == "unavailable"
     assert body["provider"] == "mock"
     assert "nonexistent" not in response.text
-  
+    
