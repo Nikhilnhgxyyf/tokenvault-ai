@@ -60,7 +60,7 @@ async def test_only_the_hash_is_stored_never_the_key(
     assert row.name == "Production key"
     assert row.key_hash == hash_api_key(created.plaintext)
     assert row.key_prefix == created.plaintext[:9]
-    stored_text = " ".join([row.id, row.tenant_id, row.name, row.key_prefix, row.key_hash])
+    stored_text = f"{row.id} {row.tenant_id} {row.name} {row.key_prefix} {row.key_hash}"
     assert created.plaintext not in stored_text
     assert created.plaintext not in repr(created)
 
@@ -143,4 +143,4 @@ async def test_creating_a_key_validates_its_inputs(
             await create_api_key(session, tenant_id=tenant_id, name="   ")
         with pytest.raises(InvalidInputError):
             await create_api_key(session, tenant_id=tenant_id, name="x" * 101)
-          
+            
