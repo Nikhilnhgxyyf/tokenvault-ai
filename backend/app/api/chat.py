@@ -4,8 +4,11 @@ Steps: authenticate the API key -> check the content type -> validate the body -
 call the provider under a timeout -> record usage -> answer.
 
 No database connection is held open while the provider is running. If usage cannot be
-recorded, the reply still goes out (the provider call already happened) but it says
-`accounting: failed` and is never labeled as recorded.
+recorded because of an EXPECTED operational problem (database trouble, a timeout, or
+usage data that breaks our rules), the reply still goes out (the provider call already
+happened) but it says `accounting: failed` and is never labeled as recorded.
+Unexpected errors (programming defects) are NOT caught here: they become a 500 and are
+logged, so they cannot hide.
 """
 
 import asyncio
@@ -16,6 +19,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import AuthContext, require_api_key
 from app.core.errors import AppError
@@ -30,11 +34,24 @@ from app.schemas.chat import (
     ChatCompletionUsage,
     TokenVaultInfo,
 )
+from app.services.errors import AccountingError
 from app.services.usage import record_usage, usage_input_from_provider_response
 
 logger = logging.getLogger("tokenvault.gateway")
 
 router = APIRouter(tags=["gateway"])
+
+_ACCOUNTING_TIMEOUT_SECONDS = 5.0
+
+# Failures we expect in normal operation. ValidationError here means the provider reported
+# usage that breaks our rules (for example cached tokens above prompt tokens).
+_EXPECTED_ACCOUNTING_ERRORS = (
+    AccountingError,
+    SQLAlchemyError,
+    ValidationError,
+    TimeoutError,
+    OSError,
+)
 
 
 def _request_id(request: Request) -> str:
@@ -94,16 +111,17 @@ async def create_chat_completion(
         usage_input = usage_input_from_provider_response(
             tenant_id=auth.tenant_id, request_id=request_id, response=provider_response
         )
-        async with session_scope(request.app.state.session_factory) as session:
-            event = await record_usage(session, usage_input)
+        async with asyncio.timeout(_ACCOUNTING_TIMEOUT_SECONDS):
+            async with session_scope(request.app.state.session_factory) as session:
+                event = await record_usage(session, usage_input)
         cost_status = event.cost_status
         estimated_cost = event.estimated_cost_nano_usd
-    except Exception as exc:
+    except _EXPECTED_ACCOUNTING_ERRORS as exc:
         accounting = "failed"
-        # Metadata only (no prompt or reply text) so the call can be reconciled by hand.
+        # Metadata only, so the call can be reconciled by hand: no prompt or reply text,
+        # and no exception message (database errors can contain SQL parameters).
         logger.error(
             "usage_accounting_failed",
-            exc_info=exc,
             extra={
                 "fields": {
                     "tenant_id": auth.tenant_id,
@@ -113,6 +131,7 @@ async def create_chat_completion(
                     "usage_origin": usage.origin,
                     "prompt_tokens": usage.prompt_tokens,
                     "completion_tokens": usage.completion_tokens,
+                    "error_type": type(exc).__name__,
                 }
             },
         )
@@ -157,4 +176,4 @@ async def create_chat_completion(
             notice=" ".join(notices) if notices else None,
         ),
     )
-  
+    
