@@ -55,7 +55,11 @@ Every error uses the same shape: `{"error": {"message", "type", "code", "request
 
 ## Usage accounting
 
-After a successful provider call, one usage event is saved for the key's tenant. If saving fails, the answer is still returned (the provider call already happened) but `accounting` is `failed`, a server-side log entry records the request ID and token counts (never the prompt or reply), and that request is **not** in usage reports. Requests that fail before a provider answers (errors, timeouts) are not recorded.
+After a successful provider call, one usage event is saved for the key's tenant. If saving fails for an expected operational reason (database trouble, a 5-second accounting timeout, or usage data that breaks the rules), the answer is still returned (the provider call already happened) but `accounting` is `failed`, a server-side log entry records the request ID, token counts and the error type (never the prompt, the reply, or the error message), and that request is **not** in usage reports. An unexpected internal error (a software defect) is not hidden this way: it returns a 500 `internal_error` and is logged. Requests that fail before a provider answers (errors, timeouts) are not recorded.
+
+## Security logging
+
+Every rejected login attempt writes one `auth_failed` log entry with a `reason`: `missing_credentials`, `malformed_credentials`, `unknown_key`, `revoked_key`, or `tenant_disabled`. For revoked keys and disabled tenants the entry also has the `tenant_id` and `api_key_id`. The log never contains the API key (or any part of it), the Authorization header, or prompts. Callers always get the same generic 401 for missing, malformed, unknown and revoked keys. Database trouble during login logs only the error type. IP addresses are not logged yet (they need trusted-proxy handling first).
 
 ## API keys
 
