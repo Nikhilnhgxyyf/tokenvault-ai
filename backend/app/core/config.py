@@ -34,6 +34,9 @@ class Settings(BaseSettings):
 
     max_request_body_bytes: int = Field(default=1_048_576, ge=1024, le=52_428_800)
 
+    # Longest time, in seconds, to wait for a provider to answer one request.
+    upstream_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+
     # Comma-separated list of allowed browser origins. "*" is never allowed.
     cors_allowed_origins: str = "http://localhost:3000"
 
