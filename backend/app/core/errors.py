@@ -31,12 +31,14 @@ class AppError(Exception):
         code: str,
         message: str,
         error_type: str = "invalid_request_error",
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.error_type = error_type
+        self.headers = headers
 
 
 def error_payload(
@@ -101,6 +103,7 @@ async def _handle_app_error(request: Request, exc: AppError) -> JSONResponse:
         code=exc.code,
         message=exc.message,
         error_type=exc.error_type,
+        headers=exc.headers,
     )
 
 
@@ -192,4 +195,4 @@ def install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ProviderUpstreamError, _handle_upstream_error)
     app.add_exception_handler(ProviderNotConfiguredError, _handle_not_configured)
     app.add_exception_handler(Exception, _handle_unexpected)
-  
+                
