@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.api.chat import router as chat_router
 from app.api.health import router as health_router
 from app.core.config import Settings, get_settings
 from app.core.errors import install_exception_handlers
@@ -80,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.add_middleware(RequestContextMiddleware)
 
     application.include_router(health_router)
+    application.include_router(chat_router)
     return application
 
 
