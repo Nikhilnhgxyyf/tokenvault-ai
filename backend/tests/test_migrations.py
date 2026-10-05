@@ -20,7 +20,7 @@ def make_alembic_config(database_url: str) -> Config:
 
 def test_there_is_exactly_one_migration_head() -> None:
     config = make_alembic_config("sqlite+aiosqlite:///unused.db")
-    assert ScriptDirectory.from_config(config).get_heads() == ["0001"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0002"]
 
 
 def test_upgrade_creates_the_same_tables_columns_and_indexes_as_the_models(
@@ -57,4 +57,4 @@ def test_downgrade_removes_every_table(tmp_path: Path) -> None:
         assert remaining == set()
     finally:
         engine.dispose()
-      
+        
