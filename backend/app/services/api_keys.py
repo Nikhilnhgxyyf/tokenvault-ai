@@ -38,6 +38,16 @@ class CreatedApiKey:
 
 
 @dataclass(frozen=True)
+class ApiKeyLookup:
+    """What the database knows about a presented key. Used for security logging only."""
+
+    tenant_id: str
+    api_key_id: str
+    revoked: bool
+    tenant_active: bool
+
+
+@dataclass(frozen=True)
 class ApiKeyPrincipal:
     """Who a valid key belongs to. The tenant always comes from here, never from the client."""
 
@@ -91,11 +101,12 @@ async def create_api_key(session: AsyncSession, *, tenant_id: str, name: str) ->
     )
 
 
-async def authenticate_api_key(session: AsyncSession, presented: str) -> ApiKeyPrincipal | None:
-    """Return the owner of a valid, unrevoked key, or None for any kind of invalid key.
+async def lookup_api_key(session: AsyncSession, presented: str) -> ApiKeyLookup | None:
+    """Find a presented key by its hash. Returns None if it is malformed or unknown.
 
-    Unknown, malformed, and revoked keys all give the same answer (None) so callers
-    cannot learn which keys exist.
+    One query is used for every case (valid, revoked, disabled tenant, unknown), so the
+    work done does not depend on which kind of key was presented. The key is compared by
+    its SHA-256 hash, which an attacker cannot steer, so there is no useful timing signal.
     """
     if not is_well_formed_api_key(presented):
         return None
@@ -105,12 +116,29 @@ async def authenticate_api_key(session: AsyncSession, presented: str) -> ApiKeyP
         .where(ApiKey.key_hash == hash_api_key(presented))
     )
     row = (await session.execute(statement)).first()
-    if row is None or row.revoked_at is not None:
+    if row is None:
         return None
-    return ApiKeyPrincipal(
+    return ApiKeyLookup(
         tenant_id=row.tenant_id,
         api_key_id=row.id,
+        revoked=row.revoked_at is not None,
         tenant_active=bool(row.is_active),
+    )
+
+
+async def authenticate_api_key(session: AsyncSession, presented: str) -> ApiKeyPrincipal | None:
+    """Return the owner of a valid, unrevoked key, or None for any kind of invalid key.
+
+    Unknown, malformed, and revoked keys all give the same answer (None) so callers
+    cannot learn which keys exist.
+    """
+    found = await lookup_api_key(session, presented)
+    if found is None or found.revoked:
+        return None
+    return ApiKeyPrincipal(
+        tenant_id=found.tenant_id,
+        api_key_id=found.api_key_id,
+        tenant_active=found.tenant_active,
     )
 
 
@@ -127,4 +155,4 @@ async def revoke_api_key(session: AsyncSession, *, tenant_id: str, api_key_id: s
         .values(revoked_at=revoked_at)
     )
     return result.rowcount > 0
-  
+    
